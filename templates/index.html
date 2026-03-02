@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>文字起こしツール</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f5f5f7;
+      --surface: #ffffff;
+      --surface2: #f0f0f3;
+      --border: #d1d1d6;
+      --text: #1d1d1f;
+      --text2: #6e6e73;
+      --accent: #0071e3;
+      --accent-hover: #0077ed;
+      --success: #34c759;
+      --error: #ff3b30;
+      --warn: #ff9f0a;
+      --radius: 12px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 48px;
+    }
+
+    header {
+      width: 100%;
+      max-width: 720px;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+    header span.sub { color: var(--text2); font-size: 0.85rem; margin-left: auto; }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 24px;
+      width: 100%;
+      max-width: 720px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04);
+      margin-bottom: 16px;
+    }
+
+    /* Drop zone */
+    #drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      background: var(--surface2);
+    }
+    #drop-zone.dragover, #drop-zone:hover {
+      border-color: var(--accent);
+      background: #e8f0fb;
+    }
+    #drop-zone .icon { font-size: 2.5rem; margin-bottom: 10px; }
+    #drop-zone .main-text { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
+    #drop-zone .sub-text { font-size: 0.8rem; color: var(--text2); }
+    #drop-zone.has-file { border-style: solid; border-color: var(--accent); background: #e8f0fb; }
+    #drop-zone.has-file .main-text { color: var(--accent); }
+
+    #file-input { display: none; }
+
+    /* Options */
+    .options-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    @media (max-width: 480px) { .options-grid { grid-template-columns: 1fr; } }
+
+    .option-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 10px;
+      border: 1.5px solid var(--border);
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .option-item:has(input:checked) {
+      border-color: var(--accent);
+      background: #f0f6ff;
+    }
+    .option-item input[type="checkbox"] {
+      width: 18px; height: 18px;
+      accent-color: var(--accent);
+      flex-shrink: 0;
+      margin-top: 2px;
+      cursor: pointer;
+    }
+    .option-label { font-size: 0.88rem; font-weight: 600; }
+    .option-desc { font-size: 0.75rem; color: var(--text2); margin-top: 2px; line-height: 1.4; }
+    .badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 4px;
+      vertical-align: middle;
+    }
+    .badge-free { background: #d1f5dc; color: #1a7a3a; }
+    .badge-api  { background: #fff0d0; color: #996600; }
+
+    /* Submit button */
+    #submit-btn {
+      width: 100%;
+      margin-top: 20px;
+      padding: 14px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    #submit-btn:hover:not(:disabled) { background: var(--accent-hover); }
+    #submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Progress */
+    #progress-card { display: none; }
+    .progress-bar-wrap {
+      background: var(--surface2);
+      border-radius: 8px;
+      height: 10px;
+      overflow: hidden;
+      margin: 12px 0 8px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #0071e3, #34aadc);
+      border-radius: 8px;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+    .progress-stage {
+      font-size: 0.82rem;
+      color: var(--text2);
+      min-height: 1.2em;
+    }
+    .progress-percent { font-size: 0.9rem; font-weight: 700; float: right; }
+
+    /* Stage steps */
+    .stages {
+      display: flex;
+      gap: 0;
+      margin: 16px 0 4px;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .stage-step {
+      flex: 1;
+      text-align: center;
+      font-size: 0.68rem;
+      padding: 5px 2px;
+      background: var(--surface2);
+      color: var(--text2);
+      transition: background 0.3s, color 0.3s;
+    }
+    .stage-step.active { background: #0071e3; color: white; }
+    .stage-step.done { background: #d1f5dc; color: #1a7a3a; }
+
+    /* Result */
+    #result-card { display: none; max-width: 1200px; }
+
+    /* Result 2-column layout */
+    .result-layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    .result-sidebar {
+      position: sticky;
+      top: 20px;
+    }
+    .result-main { min-width: 0; }
+    @media (max-width: 768px) {
+      .result-layout { grid-template-columns: 1fr; }
+      .result-sidebar { position: static; }
+    }
+
+    .preview-box {
+      background: var(--surface2);
+      border-radius: 10px;
+      padding: 16px;
+      font-size: 0.83rem;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      height: calc(100vh - 120px);
+      min-height: 400px;
+      overflow-y: auto;
+      font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", monospace;
+      color: var(--text);
+    }
+    @media (max-width: 768px) {
+      .preview-box { height: 60vh; }
+    }
+    #download-btn {
+      display: block;
+      margin-top: 16px;
+      padding: 13px;
+      background: var(--success);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      transition: opacity 0.15s;
+    }
+    #download-btn:hover { opacity: 0.88; }
+    #reset-btn {
+      display: block;
+      width: 100%;
+      margin-top: 10px;
+      padding: 11px;
+      background: transparent;
+      color: var(--text2);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      font-size: 0.88rem;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    #reset-btn:hover { border-color: var(--text2); }
+
+    /* Error */
+    .error-box {
+      background: #fff0f0;
+      border: 1.5px solid var(--error);
+      border-radius: 10px;
+      padding: 14px;
+      color: var(--error);
+      font-size: 0.88rem;
+      margin-top: 12px;
+    }
+
+    .section-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text2);
+      margin-bottom: 12px;
+    }
+
+    #api-warning {
+      display: none;
+      background: #fff8e6;
+      border: 1.5px solid var(--warn);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.8rem;
+      color: #7a5300;
+      margin-top: 10px;
+    }
+
+    #post-analyze-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1.5px solid var(--border);
+    }
+    #post-analyze-section .options-grid {
+      grid-template-columns: 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    #run-analysis-btn {
+      width: 100%;
+      margin-top: 14px;
+      padding: 13px;
+      background: #6e3ff3;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    #run-analysis-btn:hover:not(:disabled) { opacity: 0.88; }
+    #run-analysis-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* AI分析プログレスバー */
+    #analysis-progress {
+      display: none;
+      margin-top: 12px;
+    }
+    .analysis-bar-wrap {
+      background: var(--surface2);
+      border-radius: 6px;
+      height: 6px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .analysis-bar-indeterminate {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, transparent 0%, #6e3ff3 40%, #34aadc 60%, transparent 100%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+      0%   { background-position: 200% center; }
+      100% { background-position: -200% center; }
+    }
+    .dots::after {
+      content: '';
+      animation: dotanim 1.4s infinite;
+    }
+    @keyframes dotanim {
+      0%   { content: ''; }
+      33%  { content: '.'; }
+      66%  { content: '..'; }
+      100% { content: '...'; }
+    }
+
+    /* モーダル */
+    #analysis-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    #analysis-modal.open { display: flex; }
+    .modal-box {
+      background: var(--surface);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 680px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+      overflow: hidden;
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 22px;
+      border-bottom: 1.5px solid var(--border);
+      flex-shrink: 0;
+    }
+    .modal-header h2 { font-size: 1rem; font-weight: 700; }
+    .modal-close {
+      background: var(--surface2);
+      border: none;
+      border-radius: 50%;
+      width: 32px; height: 32px;
+      font-size: 1rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text2);
+      transition: background 0.15s;
+    }
+    .modal-close:hover { background: var(--border); }
+    .modal-body {
+      padding: 22px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .modal-loading {
+      text-align: center;
+      padding: 40px 0;
+      color: var(--text2);
+    }
+    .modal-spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: #6e3ff3;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 14px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .modal-result {
+      font-size: 0.88rem;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+    }
+    .modal-result h2 { font-size: 1rem; font-weight: 700; margin: 20px 0 8px; padding-bottom: 6px; border-bottom: 1.5px solid var(--border); }
+    .modal-result h2:first-child { margin-top: 0; }
+    .modal-result p { margin-bottom: 6px; }
+    .modal-result strong { font-weight: 700; }
+    .modal-dl-btn {
+      display: block;
+      margin-top: 18px;
+      padding: 11px;
+      background: var(--success);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: opacity 0.15s;
+      flex-shrink: 0;
+    }
+    .modal-dl-btn:hover { opacity: 0.88; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🎙 文字起こしツール</h1>
+  </div>
+  <span class="sub" id="model-info"></span>
+</header>
+
+<!-- アップロード & オプション -->
+<div class="card" id="upload-card">
+  <div class="section-title">音声ファイル</div>
+  <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+    <div class="icon">🎵</div>
+    <div class="main-text" id="drop-text">ここにファイルをドロップ</div>
+    <div class="sub-text">または クリックして選択<br>MP3 / WAV / M4A / MP4 / FLAC / OGG / OPUS / AAC</div>
+  </div>
+  <input type="file" id="file-input" accept=".mp3,.wav,.m4a,.mp4,.flac,.ogg,.opus,.aac,.weba,.webm">
+
+  <div style="margin-top:24px;">
+    <div class="section-title">オプション設定</div>
+    <div class="options-grid">
+      <label class="option-item">
+        <input type="checkbox" id="opt-diarize" checked>
+        <div>
+          <div class="option-label">話者分離 <span class="badge badge-free">無料</span></div>
+          <div class="option-desc">誰が話しているかを自動識別（要HFトークン）</div>
+        </div>
+      </label>
+      <label class="option-item">
+        <input type="checkbox" id="opt-timestamps" checked>
+        <div>
+          <div class="option-label">タイムスタンプ <span class="badge badge-free">無料</span></div>
+          <div class="option-desc">各発言に時刻を付加する</div>
+        </div>
+      </label>
+      <label class="option-item">
+        <input type="checkbox" id="opt-summarize">
+        <div>
+          <div class="option-label">要点整理 <span class="badge badge-api">Claude API</span></div>
+          <div class="option-desc">要約・主要トピック・決定事項を生成</div>
+        </div>
+      </label>
+      <label class="option-item">
+        <input type="checkbox" id="opt-tasks">
+        <div>
+          <div class="option-label">タスク抽出 <span class="badge badge-api">Claude API</span></div>
+          <div class="option-desc">アクションアイテムを箇条書きで抽出</div>
+        </div>
+      </label>
+    </div>
+    <div id="api-warning"></div>
+    <div id="diarize-warning" style="display:none;background:#fff8e6;border:1.5px solid #ff9f0a;border-radius:8px;padding:10px 14px;font-size:0.8rem;color:#7a5300;margin-top:10px;">
+      ⚠️ AssemblyAI APIキーが未設定のため、話者分離は動作しません。
+      <code>.env</code> に <code>ASSEMBLYAI_API_KEY</code> を設定してください（<a href="https://www.assemblyai.com/" target="_blank">assemblyai.com</a> で無料登録）。
+    </div>
+  </div>
+
+  <button id="submit-btn" disabled>ファイルを選択してください</button>
+</div>
+
+<!-- 進捗 -->
+<div class="card" id="progress-card">
+  <div class="section-title">処理中</div>
+  <div class="stages" id="stages">
+    <div class="stage-step" data-stage="converting">変換</div>
+    <div class="stage-step" data-stage="diarizing">話者分離</div>
+    <div class="stage-step" data-stage="transcribing">文字起こし</div>
+    <div class="stage-step" data-stage="formatting">整形</div>
+    <div class="stage-step" data-stage="analyzing">AI分析</div>
+    <div class="stage-step" data-stage="saving">保存</div>
+  </div>
+  <div class="progress-bar-wrap">
+    <div class="progress-bar-fill" id="progress-bar"></div>
+  </div>
+  <div>
+    <span class="progress-stage" id="progress-message">処理を開始中...</span>
+    <span class="progress-percent" id="progress-percent">0%</span>
+  </div>
+</div>
+
+<!-- 結果 -->
+<div class="card" id="result-card">
+  <div class="section-title">処理完了</div>
+  <div id="result-body"></div>
+</div>
+
+<!-- AI分析モーダル -->
+<div id="analysis-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2>AI分析結果</h2>
+      <button class="modal-close" id="modal-close-btn">✕</button>
+    </div>
+    <div class="modal-body" id="analysis-modal-body"></div>
+  </div>
+</div>
+
+<script>
+const dropZone   = document.getElementById('drop-zone');
+const fileInput  = document.getElementById('file-input');
+const submitBtn  = document.getElementById('submit-btn');
+const uploadCard = document.getElementById('upload-card');
+const progressCard = document.getElementById('progress-card');
+const resultCard   = document.getElementById('result-card');
+const progressBar  = document.getElementById('progress-bar');
+const progressMsg  = document.getElementById('progress-message');
+const progressPct  = document.getElementById('progress-percent');
+const apiWarning   = document.getElementById('api-warning');
+const modelInfo    = document.getElementById('model-info');
+
+let selectedFile = null;
+let ws = null;
+let currentJobId = null;
+let claudeAvailable = false;
+
+// ---- Health check ----
+async function checkHealth() {
+  try {
+    const res = await fetch('/health');
+    const data = await res.json();
+    modelInfo.textContent = `Whisper: ${data.whisper_model}`;
+    claudeAvailable = data.claude_available;
+    if (!data.claude_available) {
+      apiWarning.textContent = '⚠️ ANTHROPIC_API_KEY が未設定のため、要点整理・タスク抽出は動作しません。';
+      apiWarning.style.cssText = 'display:block;background:#fff8e6;border:1.5px solid #ff9f0a;border-radius:8px;padding:10px 14px;font-size:0.8rem;color:#7a5300;margin-top:10px;';
+      document.getElementById('opt-summarize').disabled = true;
+      document.getElementById('opt-tasks').disabled = true;
+    }
+    if (!data.diarization_available) {
+      document.getElementById('diarize-warning').style.display = 'block';
+      document.getElementById('opt-diarize').disabled = true;
+      document.getElementById('opt-diarize').checked = false;
+    }
+  } catch {}
+}
+checkHealth();
+
+// ---- Drag & Drop ----
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f) setFile(f);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) setFile(fileInput.files[0]);
+});
+
+function setFile(f) {
+  selectedFile = f;
+  dropZone.classList.add('has-file');
+  document.getElementById('drop-text').textContent = `📄 ${f.name}`;
+  submitBtn.disabled = false;
+  submitBtn.textContent = '文字起こしを開始';
+}
+
+// ---- Submit ----
+submitBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  startProcessing();
+});
+
+async function startProcessing() {
+  submitBtn.disabled = true;
+  uploadCard.style.display = 'none';
+  progressCard.style.display = 'block';
+  resultCard.style.display = 'none';
+
+  const options = {
+    diarize:          document.getElementById('opt-diarize').checked,
+    timestamps:       document.getElementById('opt-timestamps').checked,
+    summarize:        document.getElementById('opt-summarize').checked,
+    extract_tasks:    document.getElementById('opt-tasks').checked,
+    original_filename: selectedFile.name,
+  };
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  formData.append('options', JSON.stringify(options));
+
+  let jobId;
+  try {
+    const res = await fetch('/upload', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const err = await res.json();
+      showError(err.detail || 'アップロードに失敗しました');
+      return;
+    }
+    const data = await res.json();
+    jobId = data.job_id;
+    currentJobId = jobId;
+  } catch (e) {
+    showError(`ネットワークエラー: ${e.message}`);
+    return;
+  }
+
+  // WebSocket
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/${jobId}`);
+
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    updateProgress(msg);
+
+    if (msg.type === 'complete') {
+      ws.close();
+      showResult(msg);
+    } else if (msg.type === 'error') {
+      ws.close();
+      showError(msg.message);
+    }
+  };
+
+  ws.onerror = () => {
+    // WebSocket失敗 → ポーリングにフォールバック
+    startPolling(jobId);
+  };
+}
+
+// ---- Progress UI ----
+const stageOrder = ['converting','diarizing','transcribing','formatting','analyzing','saving','complete'];
+
+function updateProgress(msg) {
+  const pct = msg.percent || 0;
+  progressBar.style.width = `${pct}%`;
+  progressMsg.textContent = msg.message || '';
+  progressPct.textContent = `${pct}%`;
+
+  // ステップUI更新
+  const currentIdx = stageOrder.indexOf(msg.stage);
+  document.querySelectorAll('.stage-step').forEach(el => {
+    const stageIdx = stageOrder.indexOf(el.dataset.stage);
+    el.classList.remove('active','done');
+    if (stageIdx === currentIdx) el.classList.add('active');
+    else if (stageIdx < currentIdx) el.classList.add('done');
+  });
+}
+
+// ---- Polling fallback ----
+function startPolling(jobId) {
+  const timer = setInterval(async () => {
+    try {
+      const res = await fetch(`/status/${jobId}`);
+      const data = await res.json();
+      updateProgress({ stage: data.stage, percent: data.percent, message: data.message });
+
+      if (data.status === 'complete') {
+        clearInterval(timer);
+        showResult({ download_url: data.download_url, preview: '' });
+      } else if (data.status === 'error') {
+        clearInterval(timer);
+        showError(data.error || 'エラーが発生しました');
+      }
+    } catch {}
+  }, 2000);
+}
+
+// ---- Result ----
+async function loadPreview(jobId) {
+  try {
+    const res = await fetch(`/text/${jobId}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const box = document.getElementById('preview-box');
+    if (box) {
+      box.textContent = data.text;
+      box.style.color = '';
+      box.style.fontStyle = '';
+    }
+  } catch {}
+}
+
+function showResult(msg) {
+  progressCard.style.display = 'none';
+  resultCard.style.display = 'block';
+
+  const body = document.getElementById('result-body');
+
+  const postAnalyzeSection = claudeAvailable ? `
+    <div id="post-analyze-section">
+      <div class="section-title">AI分析（オプション）</div>
+      <div class="options-grid">
+        <label class="option-item">
+          <input type="checkbox" id="post-summarize">
+          <div>
+            <div class="option-label">要点整理 <span class="badge badge-api">Claude API</span></div>
+            <div class="option-desc">要約・主要トピック・決定事項を生成</div>
+          </div>
+        </label>
+        <label class="option-item">
+          <input type="checkbox" id="post-tasks">
+          <div>
+            <div class="option-label">タスク抽出 <span class="badge badge-api">Claude API</span></div>
+            <div class="option-desc">アクションアイテムを箇条書きで抽出</div>
+          </div>
+        </label>
+      </div>
+      <button id="run-analysis-btn">✨ AI分析を実行</button>
+    </div>` : '';
+
+  body.innerHTML = `
+    <div class="result-layout">
+      <div class="result-sidebar">
+        <div class="section-title">処理完了</div>
+        <p style="font-size:0.85rem;color:var(--text2);margin-bottom:14px;">文字起こしが完了しました。</p>
+        <a id="download-btn" href="${msg.download_url}" download>⬇ テキストファイルをダウンロード</a>
+        ${postAnalyzeSection}
+        <button id="reset-btn" style="margin-top:12px;">別のファイルを処理する</button>
+      </div>
+      <div class="result-main">
+        <div class="section-title">文字起こし全文</div>
+        <div class="preview-box" id="preview-box" style="color:var(--text2);font-style:italic;">読み込み中...</div>
+      </div>
+    </div>
+  `;
+  document.getElementById('reset-btn').addEventListener('click', resetUI);
+  if (claudeAvailable) {
+    document.getElementById('run-analysis-btn').addEventListener('click', () => runAnalysis(currentJobId));
+  }
+  loadPreview(currentJobId);
+}
+
+// ---- AI分析モーダル ----
+document.getElementById('modal-close-btn').addEventListener('click', () => {
+  document.getElementById('analysis-modal').classList.remove('open');
+});
+document.getElementById('analysis-modal').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+});
+
+function openModalLoading() {
+  const modal = document.getElementById('analysis-modal');
+  const body = document.getElementById('analysis-modal-body');
+  modal.classList.add('open');
+  body.innerHTML = `
+    <div class="modal-loading">
+      <div class="modal-spinner"></div>
+      <div style="font-size:0.95rem;font-weight:600;margin-bottom:6px;">Claude APIで解析中<span class="dots"></span></div>
+      <div style="font-size:0.8rem;color:var(--text2);margin-bottom:20px;">要点の抽出と整理を行っています</div>
+      <div class="analysis-bar-wrap"><div class="analysis-bar-indeterminate"></div></div>
+    </div>`;
+}
+
+function renderAnalysis(text) {
+  let html = escapeHtml(text);
+  // ## ヘッダー
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  // **太字**
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // タスクチェックボックス
+  html = html.replace(/- \[ \] /g, '☐ ');
+  return '<div class="modal-result">' + html + '</div>';
+}
+
+async function runAnalysis(jobId) {
+  const btn = document.getElementById('run-analysis-btn');
+  const summarize = document.getElementById('post-summarize').checked;
+  const extractTasks = document.getElementById('post-tasks').checked;
+
+  if (!summarize && !extractTasks) {
+    btn.textContent = '⚠️ タイプを選択してください';
+    setTimeout(() => { btn.textContent = '✨ AI分析を実行'; }, 2000);
+    return;
+  }
+
+  openModalLoading();
+  btn.disabled = true;
+  btn.textContent = '解析中...';
+
+  try {
+    const res = await fetch(`/analyze/${jobId}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({summarize, extract_tasks: extractTasks}),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'エラーが発生しました');
+    }
+    const data = await res.json();
+    document.getElementById('analysis-modal-body').innerHTML = renderAnalysis(data.analysis);
+    btn.textContent = '✓ 分析完了（再実行可）';
+    btn.disabled = false;
+  } catch (e) {
+    document.getElementById('analysis-modal-body').innerHTML =
+      `<div class="error-box">❌ ${escapeHtml(e.message)}</div>`;
+    btn.disabled = false;
+    btn.textContent = '✨ AI分析を実行';
+  }
+}
+
+function showError(message) {
+  progressCard.style.display = 'none';
+  resultCard.style.display = 'block';
+  document.getElementById('result-body').innerHTML = `
+    <div class="error-box">❌ ${escapeHtml(message)}</div>
+    <button id="reset-btn" style="margin-top:12px;">最初に戻る</button>
+  `;
+  document.getElementById('reset-btn').addEventListener('click', resetUI);
+}
+
+function resetUI() {
+  selectedFile = null;
+  if (ws) { ws.close(); ws = null; }
+  uploadCard.style.display = 'block';
+  progressCard.style.display = 'none';
+  resultCard.style.display = 'none';
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'ファイルを選択してください';
+  dropZone.classList.remove('has-file');
+  document.getElementById('drop-text').textContent = 'ここにファイルをドロップ';
+  fileInput.value = '';
+  progressBar.style.width = '0%';
+  progressMsg.textContent = '処理を開始中...';
+  progressPct.textContent = '0%';
+  document.querySelectorAll('.stage-step').forEach(el => el.classList.remove('active','done'));
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
