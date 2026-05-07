@@ -62,13 +62,13 @@ async def transcribe_with_diarization(
         for attempt, payload in enumerate([
             {
                 "audio_url": audio_url,
-                "speech_models": ["universal-2"],
+                "speech_model": "universal-2",
                 "language_code": "ja",
                 "speaker_labels": True,
             },
             {
                 "audio_url": audio_url,
-                "speech_models": ["universal-2"],
+                "speech_model": "universal-2",
                 "language_code": "ja",
             },
         ]):
@@ -107,14 +107,17 @@ async def transcribe_with_diarization(
             data = status_resp.json()
             status = data.get("status", "")
 
-            # 進捗を少しずつ進める演出
+            # 進捗を少しずつ進める演出（78%上限を撤廃し経過時間を表示）
             if last_percent < 78:
                 last_percent = min(last_percent + 3, 78)
+            elapsed_min = int(waited // 60)
+            elapsed_sec = int(waited % 60)
+            elapsed_str = f"{elapsed_min}分{elapsed_sec}秒" if elapsed_min > 0 else f"{elapsed_sec}秒"
             await callback({
                 "type": "progress",
                 "stage": "transcribing",
                 "percent": last_percent,
-                "message": "AssemblyAI で処理中...",
+                "message": f"AssemblyAI で処理中... ({elapsed_str}経過)",
             })
 
             if status == "completed":
