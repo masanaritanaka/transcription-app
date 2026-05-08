@@ -62,13 +62,13 @@ async def transcribe_with_diarization(
         for attempt, payload in enumerate([
             {
                 "audio_url": audio_url,
-                "speech_models": "universal-2",
+                "speech_models": ["universal-2"],
                 "language_code": "ja",
                 "speaker_labels": True,
             },
             {
                 "audio_url": audio_url,
-                "speech_models": "universal-2",
+                "speech_models": ["universal-2"],
                 "language_code": "ja",
             },
         ]):
