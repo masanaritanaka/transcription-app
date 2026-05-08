@@ -57,18 +57,18 @@ async def transcribe_with_diarization(
             "percent": 12,
             "message": "話者分離付き文字起こしを開始中...",
         })
-        # speech_model は必須（universal-2 が日本語+話者分離対応）
+        # speech_models は必須（universal-2 が日本語+話者分離対応）
         # まず speaker_labels あり → なし の順で試みる
         for attempt, payload in enumerate([
             {
                 "audio_url": audio_url,
-                "speech_model": "universal-2",
+                "speech_models": "universal-2",
                 "language_code": "ja",
                 "speaker_labels": True,
             },
             {
                 "audio_url": audio_url,
-                "speech_model": "universal-2",
+                "speech_models": "universal-2",
                 "language_code": "ja",
             },
         ]):
