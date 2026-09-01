@@ -9,6 +9,9 @@ from typing import Callable
 import httpx
 
 from config import ASSEMBLYAI_API_KEY, ASSEMBLYAI_BASE_URL
+from memory_utils import log_memory, release_memory
+
+_UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024  # 8MB
 
 _POLL_INTERVAL = 5   # 秒
 _MAX_WAIT = 3600     # 最大1時間
@@ -32,21 +35,31 @@ async def transcribe_with_diarization(
     # アップロードは大きなファイルも考慮して長めのタイムアウト
     async with httpx.AsyncClient(timeout=600.0) as client:
 
-        # Step 1: 音声ファイルをアップロード
+        # Step 1: 音声ファイルをストリーミングアップロード（全体をメモリに展開しない）
         await callback({
             "type": "progress",
             "stage": "diarizing",
             "percent": 8,
             "message": "音声ファイルをアップロード中...",
         })
-        with open(wav_path, "rb") as f:
-            upload_resp = await client.post(
-                f"{ASSEMBLYAI_BASE_URL}/upload",
-                headers={"authorization": ASSEMBLYAI_API_KEY},
-                content=f.read(),
-            )
+        log_memory("before_assemblyai_upload")
+
+        def _file_stream(path: Path):
+            with open(path, "rb") as f:
+                while True:
+                    chunk = f.read(_UPLOAD_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    yield chunk
+
+        upload_resp = await client.post(
+            f"{ASSEMBLYAI_BASE_URL}/upload",
+            headers={"authorization": ASSEMBLYAI_API_KEY},
+            content=_file_stream(wav_path),
+        )
         upload_resp.raise_for_status()
         audio_url = upload_resp.json()["upload_url"]
+        log_memory("after_assemblyai_upload")
 
         # Step 2: 文字起こし + 話者分離ジョブを投入
         # ※ speaker_labels=True のとき language_code は使えないため

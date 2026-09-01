@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -28,6 +29,11 @@ from config import (
 )
 from analyzer import analyze
 from pipeline import process_job
+from memory_utils import log_memory, release_memory
+
+logger = logging.getLogger(__name__)
+
+JOB_RETENTION_SECONDS = 3600
 
 
 # ---- ジョブ管理 ----
@@ -43,6 +49,7 @@ class Job:
     output_path: Optional[Path] = None
     error: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
+    completed_at: Optional[datetime] = None
 
 jobs: dict[str, Job] = {}
 ws_connections: dict[str, list[WebSocket]] = {}
@@ -59,12 +66,49 @@ def cleanup_old_files():
                 pass
 
 
+def _cleanup_jobs():
+    now = datetime.now()
+    expired = [
+        jid for jid, job in jobs.items()
+        if job.status in ("complete", "error")
+        and job.completed_at
+        and (now - job.completed_at).total_seconds() > JOB_RETENTION_SECONDS
+    ]
+    for jid in expired:
+        job = jobs.pop(jid, None)
+        if job and job.output_path:
+            job.output_path.unlink(missing_ok=True)
+        transcript = OUTPUT_DIR / f"{jid}_transcript.txt"
+        transcript.unlink(missing_ok=True)
+        ws_connections.pop(jid, None)
+
+    orphaned = [jid for jid in ws_connections if jid not in jobs]
+    for jid in orphaned:
+        ws_connections.pop(jid, None)
+
+    if expired or orphaned:
+        logger.info(f"[cleanup] jobs={len(expired)} ws_orphans={len(orphaned)} remaining_jobs={len(jobs)}")
+
+
+async def _periodic_cleanup():
+    while True:
+        await asyncio.sleep(300)
+        _cleanup_jobs()
+        cleanup_old_files()
+        release_memory()
+        log_memory("periodic_cleanup")
+
+
 # ---- FastAPI アプリ ----
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     cleanup_old_files()
+    log_memory("startup")
+    task = asyncio.create_task(_periodic_cleanup())
     yield
+    task.cancel()
 
 app = FastAPI(title="文字起こしツール", lifespan=lifespan)
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
@@ -80,9 +124,11 @@ async def broadcast(job_id: str, msg: dict):
         job.message = msg.get("message", job.message)
         if msg.get("type") == "complete":
             job.status = "complete"
+            job.completed_at = datetime.now()
         elif msg.get("type") == "error":
             job.status = "error"
             job.error = msg.get("message", "エラーが発生しました")
+            job.completed_at = datetime.now()
         elif msg.get("type") == "progress":
             job.status = "processing"
 
