@@ -450,6 +450,13 @@
 
   <div style="margin-top:24px;">
     <div class="section-title">オプション設定</div>
+    <div style="margin-bottom:14px;">
+      <label for="opt-language" style="font-size:0.88rem;font-weight:600;display:block;margin-bottom:6px;">言語 / Language</label>
+      <select id="opt-language" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:0.88rem;background:var(--surface);color:var(--text);cursor:pointer;">
+        <option value="ja">日本語</option>
+        <option value="en">English</option>
+      </select>
+    </div>
     <div class="options-grid">
       <label class="option-item">
         <input type="checkbox" id="opt-diarize" checked>
@@ -604,6 +611,7 @@ async function startProcessing() {
   resultCard.style.display = 'none';
 
   const options = {
+    language:          document.getElementById('opt-language').value,
     diarize:          document.getElementById('opt-diarize').checked,
     timestamps:       document.getElementById('opt-timestamps').checked,
     summarize:        document.getElementById('opt-summarize').checked,

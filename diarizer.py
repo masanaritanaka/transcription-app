@@ -76,13 +76,13 @@ async def transcribe_with_diarization(
             {
                 "audio_url": audio_url,
                 "speech_models": ["universal-2"],
-                "language_code": "ja",
+                "language_code": language,
                 "speaker_labels": True,
             },
             {
                 "audio_url": audio_url,
                 "speech_models": ["universal-2"],
-                "language_code": "ja",
+                "language_code": language,
             },
         ]):
             transcript_resp = await client.post(

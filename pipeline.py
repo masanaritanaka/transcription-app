@@ -86,6 +86,7 @@ async def process_job(
 ) -> Path:
     wav_path = file_path.parent / f"{job_id}_audio.wav"
     transcript_path = OUTPUT_DIR / f"{job_id}_transcript.txt"
+    language = options.get("language", "ja")
     want_diarize = options.get("diarize", True)
     use_assemblyai = want_diarize and bool(ASSEMBLYAI_API_KEY)
 
@@ -100,7 +101,7 @@ async def process_job(
 
         # Step 2 & 3: 文字起こし（+ 話者分離）
         if use_assemblyai:
-            segments = await transcribe_with_diarization(wav_path, job_id, callback)
+            segments = await transcribe_with_diarization(wav_path, job_id, callback, language=language)
 
             covered = max((s["end"] for s in segments), default=0)
             if covered < duration * 0.5:
@@ -108,16 +109,16 @@ async def process_job(
                     "type": "progress",
                     "stage": "transcribing",
                     "percent": 22,
-                    "message": f"AssemblyAI の日本語処理が不完全（{covered:.0f}秒/{duration:.0f}秒）→ Groq で全文字起こしに切り替えます",
+                    "message": f"AssemblyAI の処理が不完全（{covered:.0f}秒/{duration:.0f}秒）→ Groq で全文字起こしに切り替えます",
                 })
-                segments = await transcribe(wav_path, job_id, callback)
+                segments = await transcribe(wav_path, job_id, callback, language=language)
                 num_speakers = 0
             else:
                 num_speakers = len(set(s.get("speaker", "") for s in segments if s.get("speaker")))
         else:
             await callback({"type": "progress", "stage": "transcribing", "percent": 20,
                             "message": "文字起こしを開始中..."})
-            segments = await transcribe(wav_path, job_id, callback)
+            segments = await transcribe(wav_path, job_id, callback, language=language)
             num_speakers = 0
 
         log_memory("after_transcription")
