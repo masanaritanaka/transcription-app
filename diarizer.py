@@ -44,7 +44,7 @@ async def transcribe_with_diarization(
         })
         log_memory("before_assemblyai_upload")
 
-        def _file_stream(path: Path):
+        async def _file_stream(path: Path):
             with open(path, "rb") as f:
                 while True:
                     chunk = f.read(_UPLOAD_CHUNK_SIZE)
